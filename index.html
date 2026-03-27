@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>OptumRx — OT Hours Analyzer (Pivot)</title>
+<title>OptumRx — OT Hours Analyzer (Pivot + Filters + Targets)</title>
 
 <!-- SheetJS for in-browser Excel/CSV parsing -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -25,6 +25,10 @@
     --grid:#edf2f7;
     --subtotal:#f2f2f2;
     --grand:#e6edf6;
+    --red:#b42318;
+    --yellow:#a16207;
+    --green:#047857;
+    --soft-yellow:#fff7cc;
   }
 
   /* Page */
@@ -52,22 +56,16 @@
     width:12px; height:12px; border-radius:3px; background:var(--orange); display:inline-block;
     box-shadow:0 0 0 2px rgba(255,255,255,.35) inset;
   }
-  header h1{
-    font-size:18px; margin:0;
-  }
-  .controls{
-    margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-  }
+  header h1{ font-size:18px; margin:0; }
+  .controls{ margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .controls label{font-size:12px; opacity:.9;}
-  .controls input[type="file"]{
-    color:var(--white);
-    max-width:280px;
-  }
+  .controls input[type="file"]{ color:var(--white); max-width:280px; }
   .btn{
     background:var(--brand-blue-600); color:var(--white); border:0; padding:10px 14px;
     border-radius:8px; cursor:pointer; font-weight:600;
   }
   .btn.secondary{ background:transparent; border:1px solid rgba(255,255,255,.6); }
+  .btn.ghost{ background:#fff; color:#111; border:1px solid var(--border); }
   .btn:disabled{ opacity:.6; cursor:not-allowed; }
 
   /* Main */
@@ -77,9 +75,32 @@
     margin-bottom:16px;
   }
   .grid{ display:grid; gap:12px; grid-template-columns: 1fr; }
-  @media(min-width:980px){ .grid{ grid-template-columns: 2fr 1fr; } }
+  @media(min-width:1100px){ .grid{ grid-template-columns: 2fr 1fr; } }
 
-  /* Chips */
+  /* Upload bar on orange */
+  .bar{
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    background:#ffe1b3; border:1px dashed rgba(10,42,102,.35);
+    padding:10px 12px; border-radius:10px;
+  }
+  .bar input[type="date"],
+  .bar input[type="checkbox"]{ accent-color:var(--brand-blue); }
+
+  /* Filters */
+  .filters{
+    display:grid; gap:10px; grid-template-columns: 1fr; margin-bottom:10px;
+  }
+  @media(min-width:900px){
+    .filters{ grid-template-columns: 2fr 1.2fr 1.2fr auto; align-items:start; }
+  }
+  .filter-block{
+    background:#fff; border:1px solid var(--border); border-radius:10px; padding:10px;
+  }
+  .filter-block h4{ margin:0 0 6px 0; font-size:12px; color:#334155; }
+  .filter-select{ width:100%; min-height:110px; }
+  .tiny{ font-size:12px; opacity:.9; }
+  .muted{ color:var(--muted); font-size:12px; }
+
   .chips{ display:flex; flex-wrap:wrap; gap:8px; }
   .chip{
     padding:6px 10px; border-radius:999px; background:#fff; border:1px solid var(--border); font-size:12px;
@@ -121,9 +142,40 @@
     transform:translateY(-1px);
   }
 
-  /* Warnings */
-  .warn-line{ font-size:12px; color:#7c2d12; }
-  .muted{ color:var(--muted); font-size:12px; }
+  /* Today highlight */
+  thead th.today-col{
+    background:#ffd24d !important; color:#111 !important; border-bottom-color:#eab308 !important;
+  }
+  tbody td.today-col{ background:#fff7cc !important; font-weight:700; }
+  .subtotal-row td.today-col{ background:#fff1a6 !important; }
+  .grand-row   td.today-col{ background:#ffe38a !important; }
+  thead th.today-col, tbody td.today-col{
+    box-shadow: inset 1px 0 0 rgba(234,179,8,.55), inset -1px 0 0 rgba(234,179,8,.55);
+  }
+
+  /* Target tracker (right pane) */
+  .side-table-wrap{
+    overflow:auto; background:#fff; border-radius:10px; border:1px solid var(--border);
+    max-height:420px;
+  }
+  .targets-table{ width:100%; border-collapse:separate; border-spacing:0; min-width:520px; }
+  .targets-table thead th{
+    position:sticky; top:0; background:#0a2a66; color:#fff;
+    text-align:left; padding:8px 10px; border-bottom:2px solid #061a43;
+  }
+  .targets-table tbody td{ padding:7px 10px; border-bottom:1px solid #eef2f7; }
+  .targets-table input[type="number"]{
+    width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:6px; font-family:inherit;
+  }
+  .badge{
+    display:inline-block; min-width:64px; text-align:right; font-weight:700;
+  }
+  .badge.red{ color:var(--red); }
+  .badge.yellow{ color:var(--yellow); }
+  .badge.green{ color:var(--green); }
+  .legend{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .dot.red{ background:var(--red); } .dot.yellow{ background:#eab308; } .dot.green{ background:#10b981; }
 
   /* Loading overlay */
   .overlay{
@@ -136,32 +188,6 @@
     animation:spin 0.9s linear infinite;
   }
   @keyframes spin{ to{ transform:rotate(360deg);} }
-
-  /* Upload bar on orange */
-  .bar{
-    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-    background:#ffe1b3; border:1px dashed rgba(10,42,102,.35);
-    padding:10px 12px; border-radius:10px;
-  }
-  .bar input[type="date"],
-  .bar input[type="checkbox"]{ accent-color:var(--brand-blue); }
-
-  /* === Today (current day) column highlight =============================== */
-  thead th.today-col{
-    background:#ffd24d !important;    /* stronger header color */
-    color:#111 !important;
-    border-bottom-color:#eab308 !important; /* amber-ish */
-  }
-  tbody td.today-col{
-    background:#fff7cc !important;    /* soft yellow for cells */
-    font-weight:700;                   /* pop a bit */
-  }
-  .subtotal-row td.today-col{ background:#fff1a6 !important; }
-  .grand-row   td.today-col{ background:#ffe38a !important; }
-  thead th.today-col,
-  tbody td.today-col{
-    box-shadow: inset 1px 0 0 rgba(234,179,8,.55), inset -1px 0 0 rgba(234,179,8,.55);
-  }
 </style>
 </head>
 
@@ -192,8 +218,37 @@
     </section>
 
     <div class="grid">
+      <!-- Left: Pivot & Filters -->
       <section class="panel">
         <h2 style="margin-top:0">Pivot Table (Activity → Status × Date)</h2>
+
+        <!-- Filters -->
+        <div class="filters" aria-label="Filters">
+          <div class="filter-block">
+            <h4>Activity Code</h4>
+            <select id="filterActivity" class="filter-select" multiple></select>
+            <div class="tiny"><label><input type="checkbox" id="activitySelectAll" checked> Select all</label></div>
+          </div>
+          <div class="filter-block">
+            <h4>Status</h4>
+            <select id="filterStatus" class="filter-select" multiple></select>
+            <div class="tiny"><label><input type="checkbox" id="statusSelectAll" checked> Select all</label></div>
+          </div>
+          <div class="filter-block">
+            <h4>Date</h4>
+            <select id="filterDate" class="filter-select" multiple></select>
+            <div class="tiny" style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+              <button id="todayBtn" class="btn ghost" type="button" title="Select today in the date filter">Today</button>
+              <label><input type="checkbox" id="dateSelectAll" checked> Select all</label>
+            </div>
+            <div class="tiny muted" style="margin-top:6px">Target tracker works when exactly <strong>one</strong> date is selected.</div>
+          </div>
+          <div class="filter-block" style="display:flex; gap:8px; align-items:center; justify-content:flex-start;">
+            <button id="applyFilters" class="btn" type="button">Apply filters</button>
+            <button id="resetFilters" class="btn ghost" type="button">Reset</button>
+          </div>
+        </div>
+
         <div id="tableWrap" class="table-wrap" role="region" aria-live="polite">
           <table id="resultTable">
             <thead id="thead">
@@ -213,6 +268,7 @@
         </div>
       </section>
 
+      <!-- Right: Status Totals + Target Tracker -->
       <aside class="panel">
         <h2 style="margin-top:0">Status Totals</h2>
         <div id="chips" class="chips" aria-live="polite"></div>
@@ -221,6 +277,36 @@
           <summary><strong>Data warnings</strong> (rows skipped or fixed)</summary>
           <div id="warnings" class="muted">(none)</div>
         </details>
+
+        <div style="margin-top:18px">
+          <h2 style="margin:0 0 8px 0">Daily Target Tracker</h2>
+          <div class="muted tiny" id="targetsInfo">
+            Select exactly <strong>one</strong> date in the filters to enable entry and calculations.
+          </div>
+          <div class="legend tiny" style="margin:8px 0 10px 0">
+            <span><span class="dot red"></span> &lt; 80%</span>
+            <span><span class="dot yellow"></span> 80–98%</span>
+            <span><span class="dot green"></span> &gt; 98%</span>
+          </div>
+          <div class="side-table-wrap" id="targetsWrap" aria-live="polite">
+            <table class="targets-table" id="targetsTable">
+              <thead>
+                <tr>
+                  <th style="width:45%">Activity Code</th>
+                  <th style="width:22%">Target (hrs)</th>
+                  <th style="width:18%">Completed (hrs)</th>
+                  <th style="width:15%">% Achieved</th>
+                </tr>
+              </thead>
+              <tbody id="targetsTbody">
+                <tr><td colspan="4" class="muted">No date selected.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <button id="clearTargets" class="btn ghost" type="button">Clear targets for selected date</button>
+          </div>
+        </div>
       </aside>
     </div>
   </main>
@@ -243,17 +329,43 @@
   const warningsEl = document.getElementById('warnings');
   const chips = document.getElementById('chips');
 
+  // Filters
+  const filterActivity = document.getElementById('filterActivity');
+  const filterStatus   = document.getElementById('filterStatus');
+  const filterDate     = document.getElementById('filterDate');
+  const todayBtn       = document.getElementById('todayBtn');
+  const actAllChk      = document.getElementById('activitySelectAll');
+  const stAllChk       = document.getElementById('statusSelectAll');
+  const dtAllChk       = document.getElementById('dateSelectAll');
+  const applyFiltersBtn= document.getElementById('applyFilters');
+  const resetFiltersBtn= document.getElementById('resetFilters');
+
+  // Target tracker
+  const targetsWrap  = document.getElementById('targetsWrap');
+  const targetsTbody = document.getElementById('targetsTbody');
+  const targetsInfo  = document.getElementById('targetsInfo');
+  const clearTargetsBtn = document.getElementById('clearTargets');
+
   // In-memory store
   let rows = [];           // normalized rows
   let warnings = [];       // string messages
+
+  // Filters state
+  let filtActivities = new Set();
+  let filtStatuses   = new Set();
+  let filtDates      = new Set();
+
+  // Targets persistence: { [date:string]: { [activity:string]: number } }
+  const LS_KEY = 'ot_targets_v1';
+  const targetsDB = loadTargets();
 
   // Helpers
   const showOverlay = (show)=> {
     overlay.classList.toggle('show', !!show);
     overlay.setAttribute('aria-hidden', show ? 'false' : 'true');
   };
-
   const toNumber = (v)=> Number.isFinite(v) ? v : (typeof v === 'string' ? Number(v) : NaN);
+  const uniq = (arr)=> Array.from(new Set(arr));
 
   function excelSerialToDate(n){
     const ms = Math.round((n - 25569) * 86400 * 1000); // Excel serial -> JS ms
@@ -276,18 +388,15 @@
     }
     return 'No Date';
   }
-
   function parseLengthToHours(v){
     if (v == null) return NaN;
 
-    // numbers or numeric strings (e.g., 1.5 or "2")
     const asNum = toNumber(v);
     if (!isNaN(asNum) && String(v).trim() === String(asNum)) return asNum;
 
     const s = String(v).trim();
     if (!s) return NaN;
 
-    // allow "hh:mm[:ss]" or "mm:ss" (assume hh:mm when 2 parts)
     if (s.includes(':')){
       const parts = s.split(':').map(x => Number(x.replace(/[^\d.]/g,'')));
       if (parts.some(isNaN)) return NaN;
@@ -298,13 +407,12 @@
         const [a,b] = parts; return a + b/60;
       }
     }
-
     const f = parseFloat(s);
     return isNaN(f) ? NaN : f;
   }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   function normalizeRow(obj, fallbackDateStr, i, srcLabel){
-    // case-insensitive header mapping
     const pick = (names)=> {
       for (const n of names){
         for (const key of Object.keys(obj)){
@@ -335,14 +443,78 @@
     return { activity:String(activity).trim(), status:String(status).trim(), date, hours };
   }
 
+  function getSelectedOptions(selectEl){
+    return new Set(Array.from(selectEl.selectedOptions || []).map(o=>o.value));
+  }
+  function setSelectOptions(selectEl, items, selectedSet){
+    const prev = new Set(Array.from(selectEl.selectedOptions || []).map(o=>o.value));
+    selectEl.innerHTML = '';
+    items.forEach(v=>{
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      // preserve previous selection when possible; fall back to selectedSet or "all selected" state
+      opt.selected = selectedSet ? selectedSet.has(v) : (prev.size? prev.has(v): true);
+      selectEl.appendChild(opt);
+    });
+  }
+
+  function todayString(){ return fmtDate(new Date()); }
+
+  function buildFilterLists(){
+    const activities = uniq(rows.map(r=>r.activity)).sort((a,b)=>a.localeCompare(b));
+    const statuses   = uniq(rows.map(r=>r.status)).sort((a,b)=>{
+      const order = {'Completed':0,'Pending approval':1,'Canceled':2,'Denied':3};
+      return (order[a]??9) - (order[b]??9) || a.localeCompare(b);
+    });
+    const dates      = uniq(rows.map(r=>r.date)).sort((a,b)=>{
+      if (a==='No Date') return 1;
+      if (b==='No Date') return -1;
+      return new Date(a) - new Date(b);
+    });
+
+    setSelectOptions(filterActivity, activities, filtActivities.size?filtActivities:null);
+    setSelectOptions(filterStatus,   statuses,   filtStatuses.size?filtStatuses:null);
+    setSelectOptions(filterDate,     dates,      filtDates.size?filtDates:null);
+
+    // Defaults: select all
+    if (!filtActivities.size) selectAll(filterActivity, true);
+    if (!filtStatuses.size)   selectAll(filterStatus, true);
+    if (!filtDates.size)      selectAll(filterDate, true);
+
+    actAllChk.checked = allSelected(filterActivity);
+    stAllChk.checked  = allSelected(filterStatus);
+    dtAllChk.checked  = allSelected(filterDate);
+  }
+
+  function allSelected(selectEl){
+    return selectEl.options.length && Array.from(selectEl.options).every(o=>o.selected);
+  }
+  function selectAll(selectEl, on){
+    Array.from(selectEl.options).forEach(o=>o.selected = !!on);
+  }
+
+  function filteredRows(){
+    const selActs = getSelectedOptions(filterActivity);
+    const selSts  = getSelectedOptions(filterStatus);
+    const selDt   = getSelectedOptions(filterDate);
+    const useActs = selActs.size ? selActs : new Set(Array.from(filterActivity.options).map(o=>o.value));
+    const useSts  = selSts.size  ? selSts  : new Set(Array.from(filterStatus.options).map(o=>o.value));
+    const useDt   = selDt.size   ? selDt   : new Set(Array.from(filterDate.options).map(o=>o.value));
+
+    return rows.filter(r => useActs.has(r.activity) && useSts.has(r.status) && useDt.has(r.date));
+  }
+
   function aggregateAndRenderPivot(){
+    // Use filtered data for pivot and status totals
+    const data = filteredRows();
+
     // Build: Activity -> Status -> Date -> sum
     const activities = new Map();
     const statusTotals = new Map();
     const allDateSet = new Set();
     let grandAll = 0;
 
-    for (const r of rows){
+    for (const r of data){
       grandAll += r.hours;
       allDateSet.add(r.date);
       statusTotals.set(r.status, (statusTotals.get(r.status)||0) + r.hours);
@@ -355,7 +527,7 @@
     }
 
     // Today's date string (local timezone), matching fmtDate()
-    const todayStr = fmtDate(new Date());
+    const todayStr = todayString();
 
     // Sort dates ascending (No Date last)
     const dateList = Array.from(allDateSet);
@@ -365,7 +537,7 @@
       return new Date(a) - new Date(b);
     });
 
-    // Build header: row1 → "Date" colspan, row2 → individual dates + "Grand Total"
+    // Header
     thead.innerHTML = '';
     const tr1 = document.createElement('tr');
     tr1.innerHTML = `
@@ -376,23 +548,20 @@
 
     const tr2 = document.createElement('tr');
     tr2.className = 'sub';
-    // placeholders
     tr2.appendChild(Object.assign(document.createElement('th'), {textContent:''}));
     tr2.appendChild(Object.assign(document.createElement('th'), {textContent:''}));
-    // date columns
     for (const d of dateList){
       const th = document.createElement('th');
       th.textContent = d;
-      if (d === todayStr) th.classList.add('today-col'); // highlight header if today exists
+      if (d === todayStr) th.classList.add('today-col');
       tr2.appendChild(th);
     }
-    // Grand Total column
     const thGT = document.createElement('th');
     thGT.textContent = 'Grand Total';
     tr2.appendChild(thGT);
     thead.appendChild(tr2);
 
-    // Render chips (global status totals)
+    // Chips (filtered totals)
     chips.innerHTML = '';
     const orderStatus = ['Completed','Pending approval','Canceled','Denied'];
     const allStatuses = Array.from(new Set([...orderStatus, ...statusTotals.keys()]));
@@ -412,9 +581,11 @@
       const td = document.createElement('td');
       td.colSpan = 2 + Math.max(1,dateList.length) + 1;
       td.className = 'muted';
-      td.textContent = 'No data to display.';
+      td.textContent = 'No data to display (adjust your filters or upload files).';
       tr.appendChild(td); tbody.appendChild(tr);
       warningsEl.textContent = warnings.length ? warnings.join('\n') : '(none)';
+      // Targets partial render (still possible if single date selected)
+      renderTargetsTable();
       return;
     }
 
@@ -435,29 +606,24 @@
       const statusOrder = (x)=> ({'Completed':0,'Pending approval':1,'Canceled':2,'Denied':3}[x] ?? 9);
       const sortedStatuses = Array.from(stMap.keys()).sort((a,b)=> statusOrder(a) - statusOrder(b) || a.localeCompare(b));
 
-      // Group rows control
       let firstRow = true;
       const groupRows = [];
 
-      // Activity subtotal accumulators
+      // Subtotal accumulators
       const subByDate = new Map(dateList.map(d=>[d,0]));
       let subGrand = 0;
 
       for (const st of sortedStatuses){
         const dMap = stMap.get(st);
 
-        // Build one pivot row for this status
         const tr = document.createElement('tr');
         const tdAct = document.createElement('td');
         if (firstRow){
-          // caret + label
           const caret = document.createElement('span');
-          caret.className = 'caret'; caret.textContent = '▼';
-          caret.title = 'Collapse/Expand';
+          caret.className = 'caret'; caret.textContent = '▼'; caret.title = 'Collapse/Expand';
           caret.addEventListener('click', ()=>{
             const isOpen = caret.textContent === '▼';
             caret.textContent = isOpen ? '▶' : '▼';
-            // toggle all subsequent status rows until subtotal row
             for (const rr of groupRows){ rr.style.display = isOpen ? 'none' : ''; }
           });
           tdAct.appendChild(caret);
@@ -474,7 +640,7 @@
         tdStatus.textContent = st;
         tr.appendChild(tdStatus);
 
-        // Fill date columns
+        // Date cells
         let rowGrand = 0;
         for (const d of dateList){
           const val = dMap.get(d) || 0;
@@ -484,16 +650,15 @@
           td.className = 'num';
           if (val === 0){
             td.classList.add('cell-empty');
-            td.textContent = ''; // show blank when zero, like your mock
+            td.textContent = '';
           }else{
             td.textContent = val.toFixed(2);
           }
-          if (d === todayStr) td.classList.add('today-col'); // highlight today's column
+          if (d === todayStr) td.classList.add('today-col');
           tr.appendChild(td);
         }
         subGrand += rowGrand;
 
-        // Row grand total
         const tdGT = document.createElement('td');
         tdGT.className = 'num';
         tdGT.textContent = rowGrand ? rowGrand.toFixed(2) : '';
@@ -503,7 +668,7 @@
         groupRows.push(tr);
       }
 
-      // Subtotal row for activity
+      // Subtotal row
       const trSub = document.createElement('tr');
       trSub.className = 'subtotal-row';
       const tdSub1 = document.createElement('td');
@@ -516,7 +681,7 @@
         const td = document.createElement('td');
         td.className = 'num';
         td.textContent = val ? val.toFixed(2) : '';
-        if (d === todayStr) td.classList.add('today-col'); // subtotal today cell
+        if (d === todayStr) td.classList.add('today-col');
         trSub.appendChild(td);
       }
       const tdSubGT = document.createElement('td');
@@ -534,12 +699,13 @@
     tdG1.textContent = 'Grand Total';
     trGrand.appendChild(tdG1);
 
+    const tStr = todayString();
     for (const d of dateList){
       const td = document.createElement('td');
       td.className = 'num';
       const v = overallByDate.get(d) || 0;
       td.textContent = v ? v.toFixed(2) : '';
-      if (d === fmtDate(new Date())) td.classList.add('today-col'); // grand total today cell
+      if (d === tStr) td.classList.add('today-col');
       trGrand.appendChild(td);
     }
     const tdGGT = document.createElement('td');
@@ -552,9 +718,142 @@
     warningsEl.innerHTML = warnings.length
       ? warnings.map(w=>`<div class="warn-line">• ${escapeHtml(w)}</div>`).join('')
       : '(none)';
+
+    // Targets
+    renderTargetsTable();
   }
 
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function renderTargetsTable(){
+    // Target tracker only works when exactly one date is selected
+    const selDates = Array.from(getSelectedOptions(filterDate));
+    if (selDates.length !== 1){
+      targetsInfo.innerHTML = 'Select exactly <strong>one</strong> date in the filters to enable entry and calculations.';
+      targetsTbody.innerHTML = `<tr><td colspan="4" class="muted">No date or multiple dates selected.</td></tr>`;
+      clearTargetsBtn.disabled = true;
+      return;
+    }
+    const selectedDate = selDates[0];
+    targetsInfo.innerHTML = `Entering targets for <strong>${selectedDate}</strong>. Values save automatically.`;
+    clearTargetsBtn.disabled = false;
+
+    // Activities to list: use all activities available (from uploaded files) but respect the Activity filter if not all selected
+    const selectedActs = getSelectedOptions(filterActivity);
+    const activityUniverse = (selectedActs.size ? selectedActs : new Set(rows.map(r=>r.activity)));
+    const activities = Array.from(activityUniverse).sort((a,b)=>a.localeCompare(b));
+
+    // Compute Completed hours on that day per activity (independent of Status filter — always 'Completed')
+    const completedByAct = new Map();
+    for (const r of rows){
+      if (r.status === 'Completed' && r.date === selectedDate && activityUniverse.has(r.activity)){
+        completedByAct.set(r.activity, (completedByAct.get(r.activity)||0) + r.hours);
+      }
+    }
+
+    // Render rows
+    const dateTargets = (targetsDB[selectedDate] || {});
+    const fragments = [];
+    for (const act of activities){
+      const comp = +(completedByAct.get(act)||0);
+      const tgt  = +(dateTargets[act] ?? 0);
+      const pct  = tgt > 0 ? (comp / tgt) * 100 : 0;
+      const cls  = pct>98 ? 'green' : (pct>=80 ? 'yellow' : 'red');
+
+      const tr = `
+        <tr data-act="${escapeHtml(act)}">
+          <td>${escapeHtml(act)}</td>
+          <td><input type="number" step="0.25" min="0" inputmode="decimal"
+              value="${tgt || ''}" placeholder="0"
+              data-role="target" data-date="${escapeHtml(selectedDate)}" data-act="${escapeHtml(act)}" /></td>
+          <td class="num">${comp ? comp.toFixed(2) : ''}</td>
+          <td class="num"><span class="badge ${cls}">${tgt>0 ? pct.toFixed(0)+'%' : ''}</span></td>
+        </tr>`;
+      fragments.push(tr);
+    }
+
+    targetsTbody.innerHTML = fragments.join('') || `<tr><td colspan="4" class="muted">No activities to show.</td></tr>`;
+
+    // Wire up change handlers
+    targetsTbody.querySelectorAll('input[data-role="target"]').forEach(inp=>{
+      inp.addEventListener('input', onTargetChange);
+    });
+  }
+
+  function onTargetChange(e){
+    const inp = e.target;
+    const date = inp.dataset.date;
+    const act  = inp.dataset.act;
+    const val  = parseFloat(inp.value);
+    if (!targetsDB[date]) targetsDB[date] = {};
+    if (isNaN(val) || val <= 0){
+      delete targetsDB[date][act];
+    }else{
+      targetsDB[date][act] = val;
+    }
+    saveTargets();
+
+    // Recompute % row
+    const tr = inp.closest('tr');
+    const actName = act;
+    const compCell = tr.querySelector('td:nth-child(3)');
+    const comp = parseFloat((compCell.textContent || '0'));
+    const tgt = isNaN(val) ? 0 : val;
+    const pct = tgt>0 ? (comp / tgt) * 100 : 0;
+    const badge = tr.querySelector('.badge');
+    const cls  = pct>98 ? 'green' : (pct>=80 ? 'yellow' : 'red');
+    badge.className = 'badge ' + cls;
+    badge.textContent = tgt>0 ? pct.toFixed(0)+'%' : '';
+
+    // (Optional) we could recompute aggregated pass/fail summary here if needed
+  }
+
+  function loadTargets(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(_){ return {}; }
+  }
+  function saveTargets(){
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(targetsDB)); }catch(_){}
+  }
+
+  clearTargetsBtn.addEventListener('click', ()=>{
+    const selDates = Array.from(getSelectedOptions(filterDate));
+    if (selDates.length !== 1) return;
+    const selectedDate = selDates[0];
+    if (targetsDB[selectedDate]) delete targetsDB[selectedDate];
+    saveTargets();
+    renderTargetsTable();
+  });
+
+  // Build filters UI after files are loaded
+  function refreshFiltersAndRender(){
+    buildFilterLists();
+    aggregateAndRenderPivot();
+  }
+
+  // Events - Select all toggles
+  actAllChk.addEventListener('change', ()=>{ selectAll(filterActivity, actAllChk.checked); });
+  stAllChk.addEventListener('change',  ()=>{ selectAll(filterStatus,   stAllChk.checked); });
+  dtAllChk.addEventListener('change',  ()=>{ selectAll(filterDate,     dtAllChk.checked); });
+
+  // "Today" quick-select
+  todayBtn.addEventListener('click', ()=>{
+    const t = todayString();
+    Array.from(filterDate.options).forEach(o=> o.selected = (o.value === t));
+    dtAllChk.checked = allSelected(filterDate);
+    aggregateAndRenderPivot();
+  });
+
+  applyFiltersBtn.addEventListener('click', ()=>{
+    aggregateAndRenderPivot();
+  });
+  resetFiltersBtn.addEventListener('click', ()=>{
+    selectAll(filterActivity, true);
+    selectAll(filterStatus,   true);
+    selectAll(filterDate,     true);
+    actAllChk.checked = stAllChk.checked = dtAllChk.checked = true;
+    aggregateAndRenderPivot();
+  });
 
   async function handleFiles(fileList){
     if (!appendChk.checked){ rows = []; warnings = []; }
@@ -579,19 +878,18 @@
     } catch(err){
       warnings.push(`⚠️ Failed to parse files: ${err.message || err}`);
     } finally{
-      aggregateAndRenderPivot();
+      refreshFiltersAndRender();
       showOverlay(false);
     }
   }
 
-  // Events
+  // File input & DnD
   fileInput.addEventListener('change', (e)=> {
     if (!e.target.files?.length) return;
     handleFiles(e.target.files);
     e.target.value = '';
   });
 
-  // Drag & drop
   window.addEventListener('dragover', e=> { e.preventDefault(); });
   window.addEventListener('drop', e=> {
     e.preventDefault();
@@ -611,6 +909,7 @@
     }
   });
 
+  // Clear everything
   clearBtn.addEventListener('click', ()=>{
     rows = []; warnings = [];
     thead.innerHTML = `
@@ -618,9 +917,12 @@
     tbody.innerHTML = `<tr><td colspan="3" class="muted">Cleared — upload again to see results.</td></tr>`;
     chips.innerHTML = '';
     warningsEl.textContent = '(none)';
+    filterActivity.innerHTML = filterStatus.innerHTML = filterDate.innerHTML = '';
+    actAllChk.checked = stAllChk.checked = dtAllChk.checked = false;
+    renderTargetsTable();
   });
 
-  // Initial render
+  // Initial
   aggregateAndRenderPivot();
 })();
 </script>
