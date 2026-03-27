@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>OptumRx — OT Hours Analyzer (Pivot)</title>
+
+<!-- SheetJS for in-browser Excel/CSV parsing -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  :root{
+    --orange:#ff8c00;              /* page background */
+    --ink:#0a0a0a;
+    --brand-blue:#0a2a66;          /* dark blue */
+    --brand-blue-600:#123781;
+    --brand-blue-700:#0f2f71;
+    --white:#ffffff;
+    --panel:#fff6e9;               /* soft panel on orange */
+    --ok:#0e8a0e;
+    --warn:#9a6700;
+    --bad:#b42318;
+    --muted:#6b7280;
+    --border:#cbd5e1;
+    --grid:#edf2f7;
+    --subtotal:#f2f2f2;
+    --grand:#e6edf6;
+  }
+
+  /* Page */
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--orange);
+    color:var(--ink);
+    font-family:"Aptos Mono","Cascadia Mono",ui-monospace,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+    line-height:1.35;
+  }
+
+  /* Header */
+  header{
+    background:linear-gradient(90deg,var(--brand-blue),var(--brand-blue-700));
+    color:var(--white);
+    padding:18px 20px;
+    display:flex; gap:16px; align-items:center; flex-wrap:wrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.25);
+  }
+  header .logo{
+    display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.5px;
+  }
+  header .logo .pill{
+    width:12px; height:12px; border-radius:3px; background:var(--orange); display:inline-block;
+    box-shadow:0 0 0 2px rgba(255,255,255,.35) inset;
+  }
+  header h1{
+    font-size:18px; margin:0;
+  }
+  .controls{
+    margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  }
+  .controls label{font-size:12px; opacity:.9;}
+  .controls input[type="file"]{
+    color:var(--white);
+    max-width:280px;
+  }
+  .btn{
+    background:var(--brand-blue-600); color:var(--white); border:0; padding:10px 14px;
+    border-radius:8px; cursor:pointer; font-weight:600;
+  }
+  .btn.secondary{ background:transparent; border:1px solid rgba(255,255,255,.6); }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+  /* Main */
+  main{ padding:18px; }
+  .panel{
+    background:var(--panel); border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.2);
+    margin-bottom:16px;
+  }
+  .grid{ display:grid; gap:12px; grid-template-columns: 1fr; }
+  @media(min-width:980px){ .grid{ grid-template-columns: 2fr 1fr; } }
+
+  /* Chips */
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    padding:6px 10px; border-radius:999px; background:#fff; border:1px solid var(--border); font-size:12px;
+  }
+  .chip.ok{ border-color:#b3e6b3; background:#eaffea; }
+  .chip.warn{ border-color:#ffe08a; background:#fff6d8; }
+  .chip.bad{ border-color:#ffc3bd; background:#fff0ee; }
+
+  /* Table (pivot) */
+  .table-wrap{
+    overflow:auto; background:#fff; border-radius:12px; border:1px solid var(--border);
+  }
+  table{ width:100%; border-collapse:separate; border-spacing:0; min-width:980px; }
+  thead th{
+    position:sticky; top:0; background:var(--brand-blue); color:var(--white);
+    text-align:left; padding:8px 10px; border-bottom:2px solid var(--brand-blue-700);
+    white-space:nowrap;
+  }
+  thead tr.sub th{
+    background:#e0e7ff; color:#111827; border-bottom:1px solid #c7d2fe;
+  }
+  tbody td{
+    padding:7px 10px; border-bottom:1px solid var(--grid); vertical-align:top;
+  }
+  tbody tr:nth-child(even){ background:#fafafa; }
+  .w-activity{ width:30%; font-weight:700; }
+  .w-status{ width:22%; }
+  .num{ text-align:right; }
+  .cell-empty{ color:#9ca3af; }
+  .subtotal-row{
+    background:var(--subtotal) !important; font-weight:700; border-top:2px solid #d1d5db;
+  }
+  .grand-row{
+    background:var(--grand) !important; font-weight:800; position:sticky; bottom:0;
+    border-top:2px solid #94a3b8;
+  }
+  .caret{
+    font-size:12px; display:inline-block; width:14px; color:#555; cursor:pointer; user-select:none;
+    transform:translateY(-1px);
+  }
+
+  /* Warnings */
+  .warn-line{ font-size:12px; color:#7c2d12; }
+  .muted{ color:var(--muted); font-size:12px; }
+
+  /* Loading overlay */
+  .overlay{
+    position:fixed; inset:0; background:rgba(10,42,102,.5);
+    display:none; place-items:center; z-index:1000;
+  }
+  .overlay.show{ display:grid; }
+  .spinner{
+    width:68px; height:68px; border-radius:50%; border:6px solid #fff; border-right-color:transparent;
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  /* Upload bar on orange */
+  .bar{
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    background:#ffe1b3; border:1px dashed rgba(10,42,102,.35);
+    padding:10px 12px; border-radius:10px;
+  }
+  .bar input[type="date"],
+  .bar input[type="checkbox"]{ accent-color:var(--brand-blue); }
+
+  /* === Today (current day) column highlight =============================== */
+  thead th.today-col{
+    background:#ffd24d !important;    /* stronger header color */
+    color:#111 !important;
+    border-bottom-color:#eab308 !important; /* amber-ish */
+  }
+  tbody td.today-col{
+    background:#fff7cc !important;    /* soft yellow for cells */
+    font-weight:700;                   /* pop a bit */
+  }
+  .subtotal-row td.today-col{ background:#fff1a6 !important; }
+  .grand-row   td.today-col{ background:#ffe38a !important; }
+  thead th.today-col,
+  tbody td.today-col{
+    box-shadow: inset 1px 0 0 rgba(234,179,8,.55), inset -1px 0 0 rgba(234,179,8,.55);
+  }
+</style>
+</head>
+
+<body>
+  <header>
+    <div class="logo">
+      <span class="pill" aria-hidden="true"></span>
+      <h1>OptumRx — OT Hours Analyzer</h1>
+    </div>
+
+    <div class="controls">
+      <label for="file">Upload Excel/CSV:</label>
+      <input id="file" type="file" accept=".xlsx,.xls,.csv" multiple />
+      <button id="clearBtn" class="btn secondary" title="Clear results">Clear</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="bar">
+        <label for="fallbackDate">Fallback Date (used only if a file lacks a “Date” column):</label>
+        <input id="fallbackDate" type="date" />
+        <label title="Add new uploads to the current results instead of replacing them">
+          <input id="appendMode" type="checkbox" /> Append mode
+        </label>
+        <span class="muted">Tip: You can drag‑drop files anywhere on the page.</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2 style="margin-top:0">Pivot Table (Activity → Status × Date)</h2>
+        <div id="tableWrap" class="table-wrap" role="region" aria-live="polite">
+          <table id="resultTable">
+            <thead id="thead">
+              <tr>
+                <th class="w-activity">Activity Code</th>
+                <th class="w-status">Status</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr><td colspan="3" class="muted" id="placeholder">No data yet — upload an Excel file to begin.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          This matrix shows total decimal hours per date. Subtotals per Activity Code and an overall Grand Total are provided.
+        </div>
+      </section>
+
+      <aside class="panel">
+        <h2 style="margin-top:0">Status Totals</h2>
+        <div id="chips" class="chips" aria-live="polite"></div>
+        <hr style="border:none; border-top:1px solid #e2e8f0; margin:14px 0" />
+        <details open>
+          <summary><strong>Data warnings</strong> (rows skipped or fixed)</summary>
+          <div id="warnings" class="muted">(none)</div>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Loading -->
+  <div class="overlay" id="overlay" aria-hidden="true" aria-label="Loading">
+    <div class="spinner" role="status" aria-live="assertive" aria-label="Processing files"></div>
+  </div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('file');
+  const clearBtn  = document.getElementById('clearBtn');
+  const appendChk = document.getElementById('appendMode');
+  const fallbackDateEl = document.getElementById('fallbackDate');
+  const overlay = document.getElementById('overlay');
+
+  const thead = document.getElementById('thead');
+  const tbody = document.getElementById('tbody');
+  const warningsEl = document.getElementById('warnings');
+  const chips = document.getElementById('chips');
+
+  // In-memory store
+  let rows = [];           // normalized rows
+  let warnings = [];       // string messages
+
+  // Helpers
+  const showOverlay = (show)=> {
+    overlay.classList.toggle('show', !!show);
+    overlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+  };
+
+  const toNumber = (v)=> Number.isFinite(v) ? v : (typeof v === 'string' ? Number(v) : NaN);
+
+  function excelSerialToDate(n){
+    const ms = Math.round((n - 25569) * 86400 * 1000); // Excel serial -> JS ms
+    return new Date(ms);
+  }
+  function fmtDate(d){
+    const mm = d.getMonth()+1, dd = d.getDate(), yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`; // M/D/YYYY
+  }
+  function parseDateValue(v, fallbackDateStr){
+    if (v instanceof Date && !isNaN(v)) return fmtDate(v);
+    if (typeof v === 'number' && v > 59 && v < 60000) return fmtDate(excelSerialToDate(v));
+    if (typeof v === 'string' && v.trim()){
+      const d = new Date(v.replaceAll('-', '/'));
+      if (!isNaN(d)) return fmtDate(d);
+    }
+    if (fallbackDateStr){
+      const d = new Date(fallbackDateStr);
+      if (!isNaN(d)) return fmtDate(d);
+    }
+    return 'No Date';
+  }
+
+  function parseLengthToHours(v){
+    if (v == null) return NaN;
+
+    // numbers or numeric strings (e.g., 1.5 or "2")
+    const asNum = toNumber(v);
+    if (!isNaN(asNum) && String(v).trim() === String(asNum)) return asNum;
+
+    const s = String(v).trim();
+    if (!s) return NaN;
+
+    // allow "hh:mm[:ss]" or "mm:ss" (assume hh:mm when 2 parts)
+    if (s.includes(':')){
+      const parts = s.split(':').map(x => Number(x.replace(/[^\d.]/g,'')));
+      if (parts.some(isNaN)) return NaN;
+      if (parts.length === 3){
+        const [h,m,sec] = parts;
+        return h + (m||0)/60 + (sec||0)/3600;
+      } else if (parts.length === 2){
+        const [a,b] = parts; return a + b/60;
+      }
+    }
+
+    const f = parseFloat(s);
+    return isNaN(f) ? NaN : f;
+  }
+
+  function normalizeRow(obj, fallbackDateStr, i, srcLabel){
+    // case-insensitive header mapping
+    const pick = (names)=> {
+      for (const n of names){
+        for (const key of Object.keys(obj)){
+          if (key.trim().toLowerCase() === n.toLowerCase()) return obj[key];
+        }
+      }
+      return undefined;
+    };
+    const activity = pick(['Activity Code','Activity']);
+    const status   = pick(['Status']);
+    const length   = pick(['Length','Duration','Time','Hours']);
+    const dateVal  = pick(['Date']);
+
+    const problems = [];
+    if (!activity) problems.push('missing Activity Code');
+    if (!status)   problems.push('missing Status');
+    if (length == null || length === '') problems.push('missing Length');
+
+    const hours = parseLengthToHours(length);
+    if (isNaN(hours)) problems.push(`invalid Length “${length}”`);
+
+    const date = parseDateValue(dateVal, fallbackDateStr);
+
+    if (problems.length){
+      warnings.push(`Skipped row ${i+1} in ${srcLabel}: ${problems.join(', ')}`);
+      return null;
+    }
+    return { activity:String(activity).trim(), status:String(status).trim(), date, hours };
+  }
+
+  function aggregateAndRenderPivot(){
+    // Build: Activity -> Status -> Date -> sum
+    const activities = new Map();
+    const statusTotals = new Map();
+    const allDateSet = new Set();
+    let grandAll = 0;
+
+    for (const r of rows){
+      grandAll += r.hours;
+      allDateSet.add(r.date);
+      statusTotals.set(r.status, (statusTotals.get(r.status)||0) + r.hours);
+
+      if (!activities.has(r.activity)) activities.set(r.activity, new Map());
+      const stMap = activities.get(r.activity);
+      if (!stMap.has(r.status)) stMap.set(r.status, new Map());
+      const dateMap = stMap.get(r.status);
+      dateMap.set(r.date, (dateMap.get(r.date)||0) + r.hours);
+    }
+
+    // Today's date string (local timezone), matching fmtDate()
+    const todayStr = fmtDate(new Date());
+
+    // Sort dates ascending (No Date last)
+    const dateList = Array.from(allDateSet);
+    dateList.sort((a,b)=>{
+      if (a==='No Date') return 1;
+      if (b==='No Date') return -1;
+      return new Date(a) - new Date(b);
+    });
+
+    // Build header: row1 → "Date" colspan, row2 → individual dates + "Grand Total"
+    thead.innerHTML = '';
+    const tr1 = document.createElement('tr');
+    tr1.innerHTML = `
+      <th class="w-activity">Activity Code</th>
+      <th class="w-status">Status</th>
+      <th colspan="${Math.max(1,dateList.length)+1}" style="text-align:center">Date</th>`;
+    thead.appendChild(tr1);
+
+    const tr2 = document.createElement('tr');
+    tr2.className = 'sub';
+    // placeholders
+    tr2.appendChild(Object.assign(document.createElement('th'), {textContent:''}));
+    tr2.appendChild(Object.assign(document.createElement('th'), {textContent:''}));
+    // date columns
+    for (const d of dateList){
+      const th = document.createElement('th');
+      th.textContent = d;
+      if (d === todayStr) th.classList.add('today-col'); // highlight header if today exists
+      tr2.appendChild(th);
+    }
+    // Grand Total column
+    const thGT = document.createElement('th');
+    thGT.textContent = 'Grand Total';
+    tr2.appendChild(thGT);
+    thead.appendChild(tr2);
+
+    // Render chips (global status totals)
+    chips.innerHTML = '';
+    const orderStatus = ['Completed','Pending approval','Canceled','Denied'];
+    const allStatuses = Array.from(new Set([...orderStatus, ...statusTotals.keys()]));
+    for (const s of allStatuses){
+      if (!statusTotals.has(s)) continue;
+      const val = statusTotals.get(s);
+      const chip = document.createElement('div');
+      chip.className = 'chip ' + (s==='Completed'?'ok':(s==='Canceled' || s==='Denied'?'bad':'warn'));
+      chip.textContent = `${s}: ${val.toFixed(2)} h`;
+      chips.appendChild(chip);
+    }
+
+    // Body
+    tbody.innerHTML = '';
+    if (activities.size === 0){
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 2 + Math.max(1,dateList.length) + 1;
+      td.className = 'muted';
+      td.textContent = 'No data to display.';
+      tr.appendChild(td); tbody.appendChild(tr);
+      warningsEl.textContent = warnings.length ? warnings.join('\n') : '(none)';
+      return;
+    }
+
+    // Overall totals per date
+    const overallByDate = new Map(dateList.map(d=>[d,0]));
+    for (const [, stMap] of activities){
+      for (const [, dMap] of stMap){
+        for (const [d, val] of dMap){
+          overallByDate.set(d, (overallByDate.get(d)||0) + val);
+        }
+      }
+    }
+
+    // Sorted activities & statuses
+    const sortedActivities = Array.from(activities.keys()).sort((a,b)=> a.localeCompare(b));
+    for (const act of sortedActivities){
+      const stMap = activities.get(act);
+      const statusOrder = (x)=> ({'Completed':0,'Pending approval':1,'Canceled':2,'Denied':3}[x] ?? 9);
+      const sortedStatuses = Array.from(stMap.keys()).sort((a,b)=> statusOrder(a) - statusOrder(b) || a.localeCompare(b));
+
+      // Group rows control
+      let firstRow = true;
+      const groupRows = [];
+
+      // Activity subtotal accumulators
+      const subByDate = new Map(dateList.map(d=>[d,0]));
+      let subGrand = 0;
+
+      for (const st of sortedStatuses){
+        const dMap = stMap.get(st);
+
+        // Build one pivot row for this status
+        const tr = document.createElement('tr');
+        const tdAct = document.createElement('td');
+        if (firstRow){
+          // caret + label
+          const caret = document.createElement('span');
+          caret.className = 'caret'; caret.textContent = '▼';
+          caret.title = 'Collapse/Expand';
+          caret.addEventListener('click', ()=>{
+            const isOpen = caret.textContent === '▼';
+            caret.textContent = isOpen ? '▶' : '▼';
+            // toggle all subsequent status rows until subtotal row
+            for (const rr of groupRows){ rr.style.display = isOpen ? 'none' : ''; }
+          });
+          tdAct.appendChild(caret);
+          tdAct.appendChild(document.createTextNode(' ' + act));
+          firstRow = false;
+        }else{
+          tdAct.textContent = '';
+        }
+        tdAct.className = 'w-activity';
+        tr.appendChild(tdAct);
+
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'w-status';
+        tdStatus.textContent = st;
+        tr.appendChild(tdStatus);
+
+        // Fill date columns
+        let rowGrand = 0;
+        for (const d of dateList){
+          const val = dMap.get(d) || 0;
+          rowGrand += val;
+          subByDate.set(d, (subByDate.get(d)||0) + val);
+          const td = document.createElement('td');
+          td.className = 'num';
+          if (val === 0){
+            td.classList.add('cell-empty');
+            td.textContent = ''; // show blank when zero, like your mock
+          }else{
+            td.textContent = val.toFixed(2);
+          }
+          if (d === todayStr) td.classList.add('today-col'); // highlight today's column
+          tr.appendChild(td);
+        }
+        subGrand += rowGrand;
+
+        // Row grand total
+        const tdGT = document.createElement('td');
+        tdGT.className = 'num';
+        tdGT.textContent = rowGrand ? rowGrand.toFixed(2) : '';
+        tr.appendChild(tdGT);
+
+        tbody.appendChild(tr);
+        groupRows.push(tr);
+      }
+
+      // Subtotal row for activity
+      const trSub = document.createElement('tr');
+      trSub.className = 'subtotal-row';
+      const tdSub1 = document.createElement('td');
+      tdSub1.colSpan = 2;
+      tdSub1.textContent = `${act} Total`;
+      trSub.appendChild(tdSub1);
+
+      for (const d of dateList){
+        const val = subByDate.get(d) || 0;
+        const td = document.createElement('td');
+        td.className = 'num';
+        td.textContent = val ? val.toFixed(2) : '';
+        if (d === todayStr) td.classList.add('today-col'); // subtotal today cell
+        trSub.appendChild(td);
+      }
+      const tdSubGT = document.createElement('td');
+      tdSubGT.className = 'num';
+      tdSubGT.textContent = subGrand ? subGrand.toFixed(2) : '';
+      trSub.appendChild(tdSubGT);
+      tbody.appendChild(trSub);
+    }
+
+    // Grand total row
+    const trGrand = document.createElement('tr');
+    trGrand.className = 'grand-row';
+    const tdG1 = document.createElement('td');
+    tdG1.colSpan = 2;
+    tdG1.textContent = 'Grand Total';
+    trGrand.appendChild(tdG1);
+
+    for (const d of dateList){
+      const td = document.createElement('td');
+      td.className = 'num';
+      const v = overallByDate.get(d) || 0;
+      td.textContent = v ? v.toFixed(2) : '';
+      if (d === fmtDate(new Date())) td.classList.add('today-col'); // grand total today cell
+      trGrand.appendChild(td);
+    }
+    const tdGGT = document.createElement('td');
+    tdGGT.className = 'num';
+    tdGGT.textContent = grandAll ? grandAll.toFixed(2) : '';
+    trGrand.appendChild(tdGGT);
+    tbody.appendChild(trGrand);
+
+    // Warnings
+    warningsEl.innerHTML = warnings.length
+      ? warnings.map(w=>`<div class="warn-line">• ${escapeHtml(w)}</div>`).join('')
+      : '(none)';
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  async function handleFiles(fileList){
+    if (!appendChk.checked){ rows = []; warnings = []; }
+    showOverlay(true);
+
+    try{
+      const files = Array.from(fileList);
+      for (const file of files){
+        const arrayBuf = await file.arrayBuffer();
+        const wb = XLSX.read(arrayBuf, { type:'array', cellDates:true, dateNF:'m/d/yyyy' });
+
+        for (const sheetName of wb.SheetNames){
+          const ws = wb.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false });
+
+          json.forEach((obj, idx)=>{
+            const r = normalizeRow(obj, fallbackDateEl.value, idx, `${file.name} → ${sheetName}`);
+            if (r) rows.push(r);
+          });
+        }
+      }
+    } catch(err){
+      warnings.push(`⚠️ Failed to parse files: ${err.message || err}`);
+    } finally{
+      aggregateAndRenderPivot();
+      showOverlay(false);
+    }
+  }
+
+  // Events
+  fileInput.addEventListener('change', (e)=> {
+    if (!e.target.files?.length) return;
+    handleFiles(e.target.files);
+    e.target.value = '';
+  });
+
+  // Drag & drop
+  window.addEventListener('dragover', e=> { e.preventDefault(); });
+  window.addEventListener('drop', e=> {
+    e.preventDefault();
+    const items = e.dataTransfer?.items;
+    const files = e.dataTransfer?.files;
+    if (items && items.length){
+      const f = [];
+      for (const it of items){
+        if (it.kind==='file'){
+          const file = it.getAsFile();
+          if (file) f.push(file);
+        }
+      }
+      if (f.length) handleFiles(f);
+    } else if (files?.length){
+      handleFiles(files);
+    }
+  });
+
+  clearBtn.addEventListener('click', ()=>{
+    rows = []; warnings = [];
+    thead.innerHTML = `
+      <tr><th class="w-activity">Activity Code</th><th class="w-status">Status</th><th>Date</th></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="muted">Cleared — upload again to see results.</td></tr>`;
+    chips.innerHTML = '';
+    warningsEl.textContent = '(none)';
+  });
+
+  // Initial render
+  aggregateAndRenderPivot();
+})();
+</script>
+</body>
+</html>
+``
